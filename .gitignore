@@ -1,0 +1,4 @@
+bin/
+local/.secrets/
+server/internal/webui/dist/*
+!server/internal/webui/dist/.gitkeep

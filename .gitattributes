@@ -1,0 +1,10 @@
+# 줄바꿈은 저장소에서 항상 LF 로 둔다. Windows(core.autocrlf=true)에서 작업해도 커밋되는 내용은 같다.
+* text=auto eol=lf
+
+# 컨테이너 안에서 실행되는 파일은 작업 디렉터리에서도 LF 여야 한다(CRLF 면 sh·psql 이 깨진다).
+*.sh  text eol=lf
+*.sql text eol=lf
+*.yml text eol=lf
+
+*.png binary
+*.ico binary
