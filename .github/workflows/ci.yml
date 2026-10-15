@@ -1,0 +1,156 @@
+name: CI & Deploy
+
+# - PR / main push: 단위 테스트 + 계약 테스트. main 이면 이어서 멀티아치 이미지 push 와 deploy 태그 갱신.
+# - 매일 09:00 KST: 계약 테스트만. Backend-v2/Community 가 스키마를 바꿔도 이 레포 CI 는 자동으로
+#   돌지 않으므로, 매일 각 서비스의 최신 main 마이그레이션으로 다시 확인한다.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  IMAGE: docker.io/cycle123/planmate-monitor
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+      - name: Go vet / test
+        working-directory: server
+        run: |
+          go vet ./...
+          go vet -tags integration ./...
+          go test ./...
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Web typecheck / test / build
+        working-directory: web
+        run: |
+          npm ci
+          npm run typecheck
+          npm test
+          npm run build
+
+  # 계약 테스트: 서비스 레포의 마이그레이션으로 DB 를 만들고 store SQL 을 monitoring_ro 로 실행한다.
+  # 로컬과 같은 local/docker-compose.yml 의 단계를 그대로 쓴다.
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Backend-v2 는 private 이라 읽기 전용 deploy key(planmate-monitor-ci-read)로 받는다.
+      - name: Checkout Backend-v2 migrations
+        uses: actions/checkout@v4
+        with:
+          repository: cow-planmate/Backend-v2
+          ref: main
+          ssh-key: ${{ secrets.BACKEND_V2_READ_SSH_KEY }}
+          path: ext/backend-v2
+          sparse-checkout: src/main/resources/db/migration
+      - name: Checkout Community migrations
+        uses: actions/checkout@v4
+        with:
+          repository: cow-planmate/Community
+          ref: main
+          path: ext/community
+          sparse-checkout: src/main/resources/db/migration
+
+      - name: Prepare DB (bootstrap → migrations → monitoring_ro)
+        env:
+          BACKEND_V2_MIGRATIONS: ${{ github.workspace }}/ext/backend-v2/src/main/resources/db/migration
+          COMMUNITY_MIGRATIONS: ${{ github.workspace }}/ext/community/src/main/resources/db/migration
+        working-directory: local
+        run: |
+          docker compose up -d --wait postgres
+          docker compose run --rm db-bootstrap
+          docker compose run --rm flyway-planmate
+          docker compose run --rm flyway-community
+          docker compose run --rm db-monitor-role
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+      - name: Contract tests
+        run: ./scripts/test-contract.sh
+
+  build-push:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [test, contract]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract metadata (tags)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=raw,value=latest
+            type=sha,format=short
+
+      # 운영 노드 oracle-arm 이 arm64 다. Dockerfile 이 크로스 컴파일하므로 QEMU 가 필요 없다.
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/arm64,linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # 다른 서비스 레포의 deploy.yml 과 같은 단계다(deploy/bootstrap/ci-step.yml).
+      # 태그 형식은 metadata-action 의 type=sha,format=short 와 같아야 한다(sha-7자리).
+      - name: Bump image tag in deploy repo
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_REPO_SSH_KEY }}
+          SERVICE: planmate-monitor
+        run: |
+          set -euo pipefail
+          TAG="sha-$(echo "${GITHUB_SHA}" | cut -c1-7)"
+
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          export GIT_SSH_COMMAND="ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
+
+          git clone --depth 1 git@github.com:cow-planmate/deploy.git /tmp/deploy
+          cd /tmp/deploy
+
+          before=$(grep -c "name: cycle123/${SERVICE}$" kustomization.yaml)
+          [ "$before" = "1" ] || { echo "kustomization.yaml 에서 ${SERVICE} 를 정확히 1개 찾지 못했다 (${before}개)"; exit 1; }
+          sed -i "\|name: cycle123/${SERVICE}\$|{n;s|newTag: .*|newTag: ${TAG}|}" kustomization.yaml
+
+          if git diff --quiet; then
+            echo "태그가 이미 ${TAG} 다 — 커밋할 것이 없다."
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "chore(${SERVICE}): ${TAG}"
+          git push || { git pull --rebase && git push; }
