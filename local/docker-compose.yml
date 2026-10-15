@@ -51,7 +51,8 @@ services:
     profiles: [setup]
     environment: { PGPASSWORD: postgres }
     volumes: ["../ops:/ops:ro"]
-    command: ["psql", "-h", "postgres", "-U", "postgres", "-v", "monitor_password=local", "-f", "/ops/monitoring-ro-account.sql"]
+    command: ["psql", "-h", "postgres", "-U", "postgres", "-v", "monitor_password=local", "-v", "monitor_app_password=local",
+              "-f", "/ops/monitoring-ro-account.sql", "-f", "/ops/monitor-db.sql"]
 
   db-seed:
     image: postgres:17

@@ -19,6 +19,8 @@ type Config struct {
 	PlanmateDBURL     string
 	CommunityDBURL    string
 	NotificationDBURL string // 선택. 비어 있으면 연결하지 않는다.
+	// monitor 전용 DB(소유자 monitor_app). 2단계(스냅샷·알림)가 쓴다. 선택 — 비어 있으면 연결하지 않는다.
+	MonitorDBURL string
 
 	ESURL    string
 	ESAPIKey string
@@ -64,6 +66,7 @@ func Load() (Config, error) {
 		PlanmateDBURL:     req("PLANMATE_DB_URL"),
 		CommunityDBURL:    req("COMMUNITY_DB_URL"),
 		NotificationDBURL: opt("NOTIFICATION_DB_URL"),
+		MonitorDBURL:      opt("MONITOR_DB_URL"),
 		ESURL:             strings.TrimRight(req("ES_URL"), "/"),
 		ESAPIKey:          req("ES_API_KEY"),
 		APMEnvironment:    env("APM_ENVIRONMENT", "prod"),

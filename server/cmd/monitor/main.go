@@ -70,6 +70,15 @@ func run() error {
 		defer notificationDB.Close()
 		checks = append(checks, health.Check{Name: "notification-db", Ping: notificationDB.Ping})
 	}
+	// monitor 전용 DB 는 아직 연결 상태만 본다(2단계 기능이 붙기 전에 운영 준비가 맞는지 화면에서 확인용).
+	if cfg.MonitorDBURL != "" {
+		monitorDB, err := postgres.Open(ctx, cfg.MonitorDBURL)
+		if err != nil {
+			return err
+		}
+		defer monitorDB.Close()
+		checks = append(checks, health.Check{Name: "monitor-db", Ping: monitorDB.Ping})
+	}
 
 	dataCache := cache.New(cfg.CacheTTL)
 	statsSvc := stats.NewService(

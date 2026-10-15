@@ -81,6 +81,7 @@ scripts/test-contract.sh            # 계약: 서비스 마이그레이션으로
 |---|---|---|
 | `PLANMATE_DB_URL`, `COMMUNITY_DB_URL` | O | `monitoring_ro` 접속 URL. 운영은 `planmate-v2-db-r` + `sslmode=require` |
 | `NOTIFICATION_DB_URL` | | 연결 상태 표시용 |
+| `MONITOR_DB_URL` | | monitor 전용 DB(`monitor_app`). 2단계(스냅샷·알림)가 쓴다. 지금은 연결 상태 표시만 |
 | `ES_URL`, `ES_API_KEY` | O | 비밀값은 `*_FILE`(파일 경로)로도 줄 수 있다 |
 | `APM_ENVIRONMENT` | | `service.environment` 필터. 기본 `prod` |
 | `KIBANA_URL` | | 서비스 이름 → Kibana APM 링크 |

@@ -8,5 +8,7 @@ export MONITOR_TEST_PLANMATE_ADMIN_URL="${MONITOR_TEST_PLANMATE_ADMIN_URL:-postg
 export MONITOR_TEST_PLANMATE_RO_URL="${MONITOR_TEST_PLANMATE_RO_URL:-postgres://monitoring_ro:local@$pg/planmate?sslmode=disable}"
 export MONITOR_TEST_COMMUNITY_ADMIN_URL="${MONITOR_TEST_COMMUNITY_ADMIN_URL:-postgres://community_app:local@$pg/community?sslmode=disable}"
 export MONITOR_TEST_COMMUNITY_RO_URL="${MONITOR_TEST_COMMUNITY_RO_URL:-postgres://monitoring_ro:local@$pg/community?sslmode=disable}"
+export MONITOR_TEST_MONITOR_DB_URL="${MONITOR_TEST_MONITOR_DB_URL:-postgres://monitor_app:local@$pg/monitor?sslmode=disable}"
+export MONITOR_TEST_MONITOR_TO_PLANMATE_URL="${MONITOR_TEST_MONITOR_TO_PLANMATE_URL:-postgres://monitor_app:local@$pg/planmate?sslmode=disable}"
 cd "$root/server"
-go test -tags integration -count=1 -v ./internal/stats/ -run Contract
+go test -tags integration -count=1 -v -run Contract ./...

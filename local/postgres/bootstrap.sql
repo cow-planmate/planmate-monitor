@@ -19,6 +19,12 @@ SELECT 'CREATE DATABASE community'
 SELECT 'CREATE DATABASE notification'
  WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'notification') \gexec
 
+-- 운영과 같게 서비스 DB 의 PUBLIC 접속을 회수한다(deploy/bootstrap/sql/20·30 참고). 그래야 새 계정은 명시적으로
+-- GRANT 받은 DB 에만 붙는다 — monitor_app 이 서비스 DB 에 못 붙는지를 로컬에서도 검증할 수 있다.
+REVOKE CONNECT ON DATABASE planmate FROM PUBLIC;
+REVOKE CONNECT ON DATABASE community FROM PUBLIC;
+REVOKE CONNECT ON DATABASE notification FROM PUBLIC;
+
 \connect planmate
 ALTER SCHEMA public OWNER TO planmate;
 

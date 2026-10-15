@@ -5,6 +5,7 @@ const LABELS: Record<string, string> = {
   'planmate-db': 'planmate DB',
   'community-db': 'community DB',
   'notification-db': 'notification DB',
+  'monitor-db': 'monitor DB',
   elasticsearch: 'Elasticsearch',
 }
 
