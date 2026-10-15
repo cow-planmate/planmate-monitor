@@ -1,0 +1,127 @@
+# planmate-monitor 로컬 개발/계약 테스트 환경.
+#
+# 운영과 버전과 연결 방식을 맞춘다: Postgres 17, ES/Kibana/APM Server 8.15.0(보안 켜짐, HTTP 평문),
+# monitor 는 monitoring_ro 롤과 읽기 전용 API 키로만 붙는다.
+#
+# 스키마는 서비스 레포의 Flyway 마이그레이션을 그대로 적용해서 만든다. 기본 경로는 이 레포 옆에
+# Backend-v2, Community 가 클론돼 있는 워크스페이스 구조이고, CI 는 환경변수로 경로를 바꾼다.
+#
+# 순서가 있는 단계(부트스트랩 → 마이그레이션 → 롤 → 시드 → ES 설정)는 scripts/local-up.sh 가
+# 하나씩 실행한다.
+name: planmate-monitor
+
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_PASSWORD: postgres
+      TZ: UTC # 운영 CNPG 와 같게. 서비스 DB 의 TIMESTAMP 값은 앱이 넣은 KST 벽시계다.
+    ports: ["15432:5432"]
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # ---- 한 번 실행하고 끝나는 단계들 (scripts/local-up.sh 가 docker compose run 으로 부른다) ----
+  db-bootstrap:
+    image: postgres:17
+    profiles: [setup]
+    environment: { PGPASSWORD: postgres }
+    volumes: ["./postgres:/sql:ro"]
+    command: ["psql", "-h", "postgres", "-U", "postgres", "-f", "/sql/bootstrap.sql"]
+
+  flyway-planmate:
+    image: flyway/flyway:11
+    profiles: [setup]
+    volumes:
+      - "${BACKEND_V2_MIGRATIONS:-../../Backend-v2/src/main/resources/db/migration}:/flyway/sql:ro"
+    command: ["-url=jdbc:postgresql://postgres:5432/planmate", "-user=planmate", "-password=local", "-locations=filesystem:/flyway/sql", "migrate"]
+
+  flyway-community:
+    image: flyway/flyway:11
+    profiles: [setup]
+    volumes:
+      - "${COMMUNITY_MIGRATIONS:-../../Community/src/main/resources/db/migration}:/flyway/sql:ro"
+    command: ["-url=jdbc:postgresql://postgres:5432/community", "-user=community_app", "-password=local", "-locations=filesystem:/flyway/sql", "migrate"]
+
+  db-monitor-role:
+    image: postgres:17
+    profiles: [setup]
+    environment: { PGPASSWORD: postgres }
+    volumes: ["../ops:/ops:ro"]
+    command: ["psql", "-h", "postgres", "-U", "postgres", "-v", "monitor_password=local", "-f", "/ops/monitoring-ro-account.sql"]
+
+  db-seed:
+    image: postgres:17
+    profiles: [setup]
+    volumes: ["./seed:/seed:ro"]
+    entrypoint: ["sh", "-c"]
+    command:
+      - >-
+        PGPASSWORD=local psql -h postgres -U planmate -d planmate -f /seed/planmate.sql &&
+        PGPASSWORD=local psql -h postgres -U planmate -d planmate -f /seed/planmate_activity.sql &&
+        PGPASSWORD=local psql -h postgres -U community_app -d community -f /seed/community.sql &&
+        PGPASSWORD=local psql -h postgres -U community_app -d community -f /seed/community_reactions.sql
+
+  # ---- Elastic (운영 ECK 8.15.0 과 같은 버전) ----
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.0
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "true"
+      xpack.security.http.ssl.enabled: "false" # 운영도 selfSignedCertificate.disabled 로 HTTP 평문
+      ELASTIC_PASSWORD: elastic-local
+      ES_JAVA_OPTS: -Xms1g -Xmx1g
+    ports: ["9200:9200"]
+    volumes: ["esdata:/usr/share/elasticsearch/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s -u elastic:elastic-local http://localhost:9200/_cluster/health | grep -q '\"status\"'"]
+      interval: 5s
+      timeout: 5s
+      retries: 40
+
+  es-setup:
+    image: curlimages/curl:8.10.1
+    profiles: [setup]
+    environment:
+      ELASTIC_PASSWORD: elastic-local
+      KIBANA_PASSWORD: kibana-local
+    volumes:
+      - "./elasticsearch/setup.sh:/setup.sh:ro"
+      - "../ops:/ops:ro"
+      - "./.secrets:/out"
+    entrypoint: ["sh", "/setup.sh"]
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.15.0
+    environment:
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+      ELASTICSEARCH_USERNAME: kibana_system
+      ELASTICSEARCH_PASSWORD: kibana-local
+    ports: ["5601:5601"]
+    depends_on:
+      elasticsearch: { condition: service_healthy }
+
+  apm-server:
+    image: docker.elastic.co/apm/apm-server:8.15.0
+    command:
+      - -e
+      - -E
+      - apm-server.host=0.0.0.0:8200
+      - -E
+      - apm-server.auth.secret_token=local-token
+      - -E
+      - output.elasticsearch.hosts=["http://elasticsearch:9200"]
+      - -E
+      - output.elasticsearch.username=elastic
+      - -E
+      - output.elasticsearch.password=elastic-local
+    ports: ["8200:8200"]
+    depends_on:
+      elasticsearch: { condition: service_healthy }
+
+volumes:
+  pgdata:
+  esdata:
