@@ -1,0 +1,58 @@
+@import 'tailwindcss';
+
+/* 색은 토큰으로만 쓴다. 모니터링 화면은 오래 띄워 두므로 다크가 기본이다. */
+:root {
+  color-scheme: dark;
+  --bg: #0d1117;
+  --surface: #151b23;
+  --surface-2: #1c2430;
+  --border: #2a3441;
+  --text: #e6edf3;
+  --text-muted: #8b98a8;
+  --accent: #4c9aff;
+  --accent-2: #a78bfa;
+  --ok: #3fb950;
+  --warn: #d29922;
+  --danger: #f85149;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg: #f6f8fa;
+  --surface: #ffffff;
+  --surface-2: #f0f3f6;
+  --border: #d0d7de;
+  --text: #1f2328;
+  --text-muted: #59636e;
+  --accent: #0969da;
+  --accent-2: #8250df;
+  --ok: #1a7f37;
+  --warn: #9a6700;
+  --danger: #cf222e;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--border);
+  --color-fg: var(--text);
+  --color-muted: var(--text-muted);
+  --color-accent: var(--accent);
+  --color-accent-2: var(--accent-2);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-danger: var(--danger);
+  --font-sans: 'Pretendard Variable', Pretendard, -apple-system, 'Segoe UI', 'Malgun Gothic', sans-serif;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
